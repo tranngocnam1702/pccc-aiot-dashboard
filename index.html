@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Hệ Thống Cảnh Báo Cháy AIoT</title>
+  <link rel="manifest" href="manifest.json">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Firebase JS SDK -->
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+</head>
+<body class="bg-slate-900 text-white min-h-screen p-4 md:p-8">
+  <div class="max-w-5xl mx-auto">
+    <!-- Header -->
+    <header class="flex flex-col md:flex-row justify-between items-center pb-6 border-b border-slate-700 gap-4">
+      <div>
+        <h1 class="text-2xl md:text-3xl font-bold text-red-500 flex items-center gap-2">
+          🔥 HỆ THỐNG GIÁM SÁT & BÁO CHÁY AIoT
+        </h1>
+        <p class="text-slate-400 text-sm mt-1">Trạm Trung Tâm (Master) & Đa Trạm Con NRF24L01</p>
+      </div>
+      <button id="btnPush" onclick="requestNotification()" class="bg-red-600 hover:bg-red-700 text-white text-sm font-semibold px-4 py-2 rounded-lg shadow transition">
+        🔔 Bật Thông Báo Push
+      </button>
+    </header>
+
+    <!-- Danh sách các Trạm -->
+    <div id="stationsContainer" class="grid grid-cols-1 md:grid-cols-2 gap-6 mt-8">
+      <!-- Dữ liệu Trạm sẽ được Render tự động từ Firebase tại đây -->
+      <div class="text-center text-slate-400 col-span-2 py-10">Đang tải dữ liệu Realtime từ Cloud...</div>
+    </div>
+  </div>
+
+  <script>
+    // Cấu hình kết nối Firebase Web Client
+    const firebaseConfig = {
+      databaseURL: "https://duanpccc-7ca9b-default-rtdb.asia-southeast1.firebasedatabase.app/"
+    };
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
+
+    // Đăng ký Service Worker cho PWA
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('sw.js').then(() => {
+        console.log('PWA Service Worker Registered');
+      });
+    }
+
+    // Xin quyền bật Push Notification trên trình duyệt
+    function requestNotification() {
+      Notification.requestPermission().then(permission => {
+        if (permission === 'granted') {
+          alert('Đã bật thành công thông báo đẩy (Push Notification)!');
+        } else {
+          alert('Cần cấp quyền thông báo để nhận cảnh báo khi có cháy!');
+        }
+      });
+    }
+
+    // Đọc dữ liệu Realtime từ Firebase
+    const stationsRef = db.ref('/DanhSachTram');
+    let previousState = {};
+
+    stationsRef.on('value', (snapshot) => {
+      const data = snapshot.val();
+      const container = document.getElementById('stationsContainer');
+      if (!data) {
+        container.innerHTML = '<div class="text-center text-slate-400 col-span-2">Chưa có dữ liệu trạm trên Firebase</div>';
+        return;
+      }
+
+      container.innerHTML = '';
+      
+      for (const [tramKey, tramData] of Object.entries(data)) {
+        const isDangerous = tramData.CoTiaLua || tramData.TrangThai !== 'An toan';
+        
+        // Bật cảnh báo âm thanh/Notification nếu phát hiện nguy hiểm mới
+        if (isDangerous && !previousState[tramKey]) {
+          if (Notification.permission === 'granted') {
+            new Notification(`⚠️ CẢNH BÁO NGUY HIỂM TẠI ${tramKey.replace('_', ' ')}!`, {
+              body: `Trạng thái: ${tramData.TrangThai} | Nhiệt độ: ${tramData.NhietDo}°C | Gas: ${tramData.NongDoGas} PPM`,
+              icon: 'https://cdn-icons-png.flaticon.com/512/785/785116.png'
+            });
+          }
+        }
+        previousState[tramKey] = isDangerous;
+
+        const cardHtml = `
+          <div class="bg-slate-800 rounded-2xl p-6 border ${isDangerous ? 'border-red-500 animate-pulse' : 'border-slate-700'} shadow-xl">
+            <div class="flex justify-between items-center mb-4 pb-3 border-b border-slate-700">
+              <h2 class="text-xl font-bold text-slate-200">📍 ${tramKey.replace('_', ' ')}</h2>
+              <span class="px-3 py-1 rounded-full text-xs font-bold ${isDangerous ? 'bg-red-500/20 text-red-400 border border-red-500' : 'bg-green-500/20 text-green-400 border border-green-500'}">
+                ${tramData.TrangThai || 'An toan'}
+              </span>
+            </div>
+
+            <div class="grid grid-cols-2 gap-4">
+              <div class="bg-slate-900/60 p-3 rounded-xl">
+                <p class="text-xs text-slate-400">🌡️ Nhiệt Độ</p>
+                <p class="text-2xl font-bold ${tramData.NhietDo > 45 ? 'text-red-400' : 'text-slate-100'}">${tramData.NhietDo ?? '--'} °C</p>
+              </div>
+              <div class="bg-slate-900/60 p-3 rounded-xl">
+                <p class="text-xs text-slate-400">💧 Độ Ẩm</p>
+                <p class="text-2xl font-bold text-slate-100">${tramData.DoAm ?? '--'} %</p>
+              </div>
+              <div class="bg-slate-900/60 p-3 rounded-xl">
+                <p class="text-xs text-slate-400">💨 Nồng Độ Gas</p>
+                <p class="text-2xl font-bold ${tramData.NongDoGas > 400 ? 'text-amber-400' : 'text-slate-100'}">${tramData.NongDoGas ?? '--'} <span class="text-xs font-normal">PPM</span></p>
+              </div>
+              <div class="bg-slate-900/60 p-3 rounded-xl">
+                <p class="text-xs text-slate-400">🌫️ Nồng Độ Bụi</p>
+                <p class="text-2xl font-bold text-slate-100">${tramData.NongDoBui ?? '--'} <span class="text-xs font-normal">µg/m³</span></p>
+              </div>
+            </div>
+
+            <div class="mt-4 pt-3 border-t border-slate-700/50 flex justify-between items-center text-xs text-slate-400">
+              <span>Cảm biến lửa: <strong class="${tramData.CoTiaLua ? 'text-red-400 font-bold' : 'text-green-400'}">${tramData.CoTiaLua ? 'Phát hiện tia lửa!' : 'Bình thường'}</strong></span>
+            </div>
+          </div>
+        `;
+        container.innerHTML += cardHtml;
+      }
+    });
+  </script>
+</body>
+</html>
