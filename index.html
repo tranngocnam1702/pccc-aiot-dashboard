@@ -33,66 +33,87 @@
   </div>
 
   <script>
+    // 1. Cấu hình Firebase
     const firebaseConfig = {
       databaseURL: "https://duanpccc-7ca9b-default-rtdb.asia-southeast1.firebasedatabase.app/"
     };
     firebase.initializeApp(firebaseConfig);
     const db = firebase.database();
 
-    // --- CẤU HÌNH PUSH NOTIFICATION & SERVICE WORKER ---
-    let isNotificationEnabled = false;
+    // 2. Cấu hình Push Notification & Lưu trạng thái vĩnh viễn (localStorage)
+    let isNotificationEnabled = localStorage.getItem('pccc_push_enabled') === 'true';
     let swRegistration = null;
+
+    // Cập nhật ngay giao diện nút bấm khi vừa tải xong DOM
+    document.addEventListener("DOMContentLoaded", () => {
+      updateNotificationButton();
+    });
 
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('sw.js').then((reg) => {
         swRegistration = reg;
         console.log('Service Worker đã sẵn sàng!');
+        updateNotificationButton();
       }).catch((err) => {
         console.error('Lỗi đăng ký Service Worker:', err);
       });
     }
 
+    // Cập nhật giao diện nút Bật/Tắt theo trạng thái đã lưu
+    function updateNotificationButton() {
+      const btn = document.getElementById('btnPush');
+      if (!btn) return;
+
+      if (isNotificationEnabled && Notification.permission === 'granted') {
+        btn.className = "bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold px-4 py-2 rounded-lg shadow transition flex items-center gap-2";
+        btn.innerHTML = "🔕 Tắt Thông Báo Push";
+      } else {
+        isNotificationEnabled = false;
+        localStorage.setItem('pccc_push_enabled', 'false');
+        btn.className = "bg-red-600 hover:bg-red-700 text-white text-sm font-semibold px-4 py-2 rounded-lg shadow transition flex items-center gap-2";
+        btn.innerHTML = "🔔 Bật Thông Báo Push";
+      }
+    }
+
     // Công tắc Bật / Tắt thông báo
     function toggleNotification() {
-      const btn = document.getElementById('btnPush');
-
       if (!isNotificationEnabled) {
         Notification.requestPermission().then(permission => {
           if (permission === 'granted') {
             isNotificationEnabled = true;
-            btn.className = "bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold px-4 py-2 rounded-lg shadow transition flex items-center gap-2";
-            btn.innerHTML = "🔕 Tắt Thông Báo Push";
-            
-            // Gửi thông báo thử nghiệm ra điện thoại ngay khi bật
-            sendPhoneNotification("🔥 HỆ THỐNG PCCC AIoT", "Đã bật thông báo đẩy thành công trên điện thoại!");
+            localStorage.setItem('pccc_push_enabled', 'true');
+            updateNotificationButton();
+            sendPhoneNotification("🔥 HỆ THỐNG PCCC AIoT", "Đã bật và lưu trạng thái thông báo đẩy thành công!");
           } else {
             alert('Bạn cần cấp quyền thông báo trên trình duyệt/điện thoại!');
           }
         });
       } else {
         isNotificationEnabled = false;
-        btn.className = "bg-red-600 hover:bg-red-700 text-white text-sm font-semibold px-4 py-2 rounded-lg shadow transition flex items-center gap-2";
-        btn.innerHTML = "🔔 Bật Thông Báo Push";
+        localStorage.setItem('pccc_push_enabled', 'false');
+        updateNotificationButton();
       }
     }
 
-    // Hàm thực thi đẩy thông báo ra màn hình khóa/thanh trạng thái điện thoại
+    // Hàm thực thi đẩy thông báo ra màn hình điện thoại
     function sendPhoneNotification(title, body) {
-      if (isNotificationEnabled && swRegistration && swRegistration.active) {
-        swRegistration.active.postMessage({
-          type: 'SHOW_NOTIFICATION',
-          title: title,
-          body: body
-        });
+      if (isNotificationEnabled && Notification.permission === 'granted') {
+        if (swRegistration && swRegistration.active) {
+          swRegistration.active.postMessage({
+            type: 'SHOW_NOTIFICATION',
+            title: title,
+            body: body
+          });
+        } else if ('Notification' in window) {
+          new Notification(title, { body: body, icon: 'https://cdn-icons-png.flaticon.com/512/785/785116.png' });
+        }
       }
     }
 
-    // Bộ nhớ lưu lịch sử dữ liệu để AI tính tốc độ tăng trưởng (Gradient)
+    // 3. MÔ HÌNH AI DỰ BÁO NGUY CƠ CHÁY (GIỮ NGUYÊN BẢN CỦA BẠN)
     const historyData = {}; 
-    // Trạng thái đã cảnh báo đẩy để tránh bắn lặp lại liên tục
     const alertStates = {};
 
-    // MÔ HÌNH AI DỰ BÁO NGUY CƠ CHÁY
     function runAIPrediction(stationId, currentTemp, currentGas, isFire) {
       if (isFire) return { status: "DANGER", msg: "🚨 CẢNH BÁO: PHÁT HIỆN LỬA TRỰC TIẾP!" };
 
@@ -124,7 +145,7 @@
       return { status: "SAFE", msg: "🟢 Trạng thái: An toàn" };
     }
 
-    // ĐỌC VÀ HIỂN THỊ DỮ LIỆU
+    // 4. ĐỌC VÀ HIỂN THỊ DỮ LIỆU TỪ FIREBASE REALTIME
     const stationsRef = db.ref('/DanhSachTram');
 
     stationsRef.on('value', (snapshot) => {
