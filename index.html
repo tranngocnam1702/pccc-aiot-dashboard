@@ -20,7 +20,8 @@
         </h1>
         <p class="text-slate-400 text-sm mt-1">Tích hợp AI Dự Báo Sớm Nguy Cơ Cháy (Time-Series Analysis)</p>
       </div>
-      <button id="btnPush" onclick="requestNotification()" class="bg-red-600 hover:bg-red-700 text-white text-sm font-semibold px-4 py-2 rounded-lg shadow transition">
+      <!-- Nút Bật/Tắt Thông Báo Đổi Màu Động -->
+      <button id="btnPush" onclick="toggleNotification()" class="bg-red-600 hover:bg-red-700 text-white text-sm font-semibold px-4 py-2 rounded-lg shadow transition flex items-center gap-2">
         🔔 Bật Thông Báo Push
       </button>
     </header>
@@ -38,18 +39,58 @@
     firebase.initializeApp(firebaseConfig);
     const db = firebase.database();
 
+    // --- CẤU HÌNH PUSH NOTIFICATION & SERVICE WORKER ---
+    let isNotificationEnabled = false;
+    let swRegistration = null;
+
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('sw.js');
+      navigator.serviceWorker.register('sw.js').then((reg) => {
+        swRegistration = reg;
+        console.log('Service Worker đã sẵn sàng!');
+      }).catch((err) => {
+        console.error('Lỗi đăng ký Service Worker:', err);
+      });
     }
 
-    function requestNotification() {
-      Notification.requestPermission().then(permission => {
-        if (permission === 'granted') alert('Đã bật thành công Push Notification!');
-      });
+    // Công tắc Bật / Tắt thông báo
+    function toggleNotification() {
+      const btn = document.getElementById('btnPush');
+
+      if (!isNotificationEnabled) {
+        Notification.requestPermission().then(permission => {
+          if (permission === 'granted') {
+            isNotificationEnabled = true;
+            btn.className = "bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold px-4 py-2 rounded-lg shadow transition flex items-center gap-2";
+            btn.innerHTML = "🔕 Tắt Thông Báo Push";
+            
+            // Gửi thông báo thử nghiệm ra điện thoại ngay khi bật
+            sendPhoneNotification("🔥 HỆ THỐNG PCCC AIoT", "Đã bật thông báo đẩy thành công trên điện thoại!");
+          } else {
+            alert('Bạn cần cấp quyền thông báo trên trình duyệt/điện thoại!');
+          }
+        });
+      } else {
+        isNotificationEnabled = false;
+        btn.className = "bg-red-600 hover:bg-red-700 text-white text-sm font-semibold px-4 py-2 rounded-lg shadow transition flex items-center gap-2";
+        btn.innerHTML = "🔔 Bật Thông Báo Push";
+      }
+    }
+
+    // Hàm thực thi đẩy thông báo ra màn hình khóa/thanh trạng thái điện thoại
+    function sendPhoneNotification(title, body) {
+      if (isNotificationEnabled && swRegistration && swRegistration.active) {
+        swRegistration.active.postMessage({
+          type: 'SHOW_NOTIFICATION',
+          title: title,
+          body: body
+        });
+      }
     }
 
     // Bộ nhớ lưu lịch sử dữ liệu để AI tính tốc độ tăng trưởng (Gradient)
     const historyData = {}; 
+    // Trạng thái đã cảnh báo đẩy để tránh bắn lặp lại liên tục
+    const alertStates = {};
 
     // MÔ HÌNH AI DỰ BÁO NGUY CƠ CHÁY
     function runAIPrediction(stationId, currentTemp, currentGas, isFire) {
@@ -102,11 +143,22 @@
         );
 
         const isAlert = aiResult.status !== "SAFE";
+        const stationName = tramKey.replace('_', ' ');
+
+        // Tự động đẩy thông báo ra điện thoại khi AI phát hiện nguy hiểm hoặc có lửa
+        if (isAlert) {
+          if (!alertStates[tramKey]) {
+            sendPhoneNotification(`⚠️ CẢNH BÁO [${stationName}]`, aiResult.msg);
+            alertStates[tramKey] = true;
+          }
+        } else {
+          alertStates[tramKey] = false;
+        }
 
         const cardHtml = `
           <div class="bg-slate-800 rounded-2xl p-6 border ${isAlert ? 'border-red-500 animate-pulse' : 'border-slate-700'} shadow-xl">
             <div class="flex justify-between items-center mb-4 pb-3 border-b border-slate-700">
-              <h2 class="text-xl font-bold text-slate-200">📍 ${tramKey.replace('_', ' ')}</h2>
+              <h2 class="text-xl font-bold text-slate-200">📍 ${stationName}</h2>
               <span class="px-3 py-1 rounded-full text-xs font-bold ${isAlert ? 'bg-red-500/20 text-red-400 border border-red-500' : 'bg-green-500/20 text-green-400 border border-green-500'}">
                 ${tramData.TrangThai || 'An toan'}
               </span>
