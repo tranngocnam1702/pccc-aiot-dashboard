@@ -26,9 +26,9 @@
       </button>
     </header>
 
-    <!-- Danh sách các Trạm -->
+    <!-- Danh sách các Trạm (Khung chứa ID chuẩn) -->
     <div id="stationsContainer" class="grid grid-cols-1 md:grid-cols-2 gap-6 mt-8">
-      <div class="text-center text-slate-400 col-span-2 py-10">Đang khởi tạo thuật toán AI & kết nối Firebase...</div>
+      <div class="text-center text-slate-400 col-span-2 py-10">Đang kết nối dữ liệu cảm biến...</div>
     </div>
   </div>
 
@@ -40,11 +40,10 @@
     firebase.initializeApp(firebaseConfig);
     const db = firebase.database();
 
-    // 2. Cấu hình Push Notification & Lưu trạng thái vĩnh viễn (localStorage)
+    // 2. Cấu hình Push Notification & Lưu trạng thái
     let isNotificationEnabled = localStorage.getItem('pccc_push_enabled') === 'true';
     let swRegistration = null;
 
-    // Cập nhật ngay giao diện nút bấm khi vừa tải xong DOM
     document.addEventListener("DOMContentLoaded", () => {
       updateNotificationButton();
     });
@@ -59,7 +58,6 @@
       });
     }
 
-    // Cập nhật giao diện nút Bật/Tắt theo trạng thái đã lưu
     function updateNotificationButton() {
       const btn = document.getElementById('btnPush');
       if (!btn) return;
@@ -75,7 +73,6 @@
       }
     }
 
-    // Công tắc Bật / Tắt thông báo
     function toggleNotification() {
       if (!isNotificationEnabled) {
         Notification.requestPermission().then(permission => {
@@ -83,7 +80,7 @@
             isNotificationEnabled = true;
             localStorage.setItem('pccc_push_enabled', 'true');
             updateNotificationButton();
-            sendPhoneNotification("🔥 HỆ THỐNG PCCC AIoT", "Đã bật và lưu trạng thái thông báo đẩy thành công!");
+            sendPhoneNotification("🔥 HỆ THỐNG PCCC AIoT", "Đã bật thông báo đẩy thành công!");
           } else {
             alert('Bạn cần cấp quyền thông báo trên trình duyệt/điện thoại!');
           }
@@ -95,48 +92,30 @@
       }
     }
 
-    // Hàm thực thi đẩy thông báo ra màn hình điện thoại
     function sendPhoneNotification(title, body) {
-  if (!isNotificationEnabled || Notification.permission !== 'granted') return;
+      if (!isNotificationEnabled || Notification.permission !== 'granted') return;
 
-  // Gửi lệnh đẩy thông báo cho Service Worker xử lý luồng rung báo động
-  if (navigator.serviceWorker && navigator.serviceWorker.controller) {
-    navigator.serviceWorker.controller.postMessage({
-      type: 'SHOW_NOTIFICATION',
-      title: title,
-      body: body
-    });
-  } else if (swRegistration && swRegistration.active) {
-    swRegistration.active.postMessage({
-      type: 'SHOW_NOTIFICATION',
-      title: title,
-      body: body
-    });
-  } else if ('Notification' in window) {
-    new Notification(title, {
-      body: body,
-      icon: 'https://cdn-icons-png.flaticon.com/512/785/785116.png',
-      vibrate: [1000, 200, 1000, 200, 1000]
-    });
-  }
-}
-  // 2. Dự phòng: Gửi thẳng qua Notification API (Đảm bảo nổ 100% khi màn hình đang bật)
-  else if (swRegistration && swRegistration.active) {
-    swRegistration.active.postMessage({
-      type: 'SHOW_NOTIFICATION',
-      title: title,
-      body: body
-    });
-  } else {
-    new Notification(title, {
-      body: body,
-      icon: 'https://cdn-icons-png.flaticon.com/512/785/785116.png',
-      vibrate: [500, 200, 500]
-    });
-  }
-}
+      if (navigator.serviceWorker && navigator.serviceWorker.controller) {
+        navigator.serviceWorker.controller.postMessage({
+          type: 'SHOW_NOTIFICATION',
+          title: title,
+          body: body
+        });
+      } else if (swRegistration && swRegistration.active) {
+        swRegistration.active.postMessage({
+          type: 'SHOW_NOTIFICATION',
+          title: title,
+          body: body
+        });
+      } else if ('Notification' in window) {
+        new Notification(title, {
+          body: body,
+          icon: 'https://cdn-icons-png.flaticon.com/512/785/785116.png'
+        });
+      }
+    }
 
-    // 3. MÔ HÌNH AI DỰ BÁO NGUY CƠ CHÁY (GIỮ NGUYÊN BẢN CỦA BẠN)
+    // 3. MÔ HÌNH AI DỰ BÁO CỦA BẠN
     const historyData = {}; 
     const alertStates = {};
 
@@ -149,16 +128,14 @@
       }
 
       const prev = historyData[stationId];
-      const timeDiff = (Date.now() - prev.time) / 1000; // tính bằng giây
+      const timeDiff = (Date.now() - prev.time) / 1000;
 
-      if (timeDiff >= 3) { // Cập nhật tính toán mỗi 3 giây
-        const tempRate = (currentTemp - prev.temp) / timeDiff; // Độ C / giây
-        const gasRate = (currentGas - prev.gas) / timeDiff;   // PPM / giây
+      if (timeDiff >= 3) {
+        const tempRate = (currentTemp - prev.temp) / timeDiff;
+        const gasRate = (currentGas - prev.gas) / timeDiff;
 
-        // Cập nhật lại điểm lịch sử
         historyData[stationId] = { temp: currentTemp, gas: currentGas, time: Date.now() };
 
-        // Đánh giá thuật toán AI
         if (tempRate > 0.5 || gasRate > 15 || (currentTemp > 40 && currentGas > 400)) {
           return { status: "WARNING", msg: "⚡ AI CẢNH BÁO SỚM: Nhiệt độ/Gas tăng vọt bất thường!" };
         }
@@ -171,28 +148,31 @@
       return { status: "SAFE", msg: "🟢 Trạng thái: An toàn" };
     }
 
-    // 4. ĐỌC VÀ HIỂN THỊ DỮ LIỆU TỪ FIREBASE REALTIME
+    // 4. LẤY DỮ LIỆU TỪ FIREBASE REALTIME (DATABASE KHỦNG)
     const stationsRef = db.ref('/DanhSachTram');
 
     stationsRef.on('value', (snapshot) => {
       const data = snapshot.val();
       const container = document.getElementById('stationsContainer');
-      if (!data) return;
+      if (!container) return;
+
+      if (!data) {
+        container.innerHTML = '<div class="text-center text-slate-400 col-span-2 py-10">Không tìm thấy dữ liệu trạm trên Firebase!</div>';
+        return;
+      }
 
       container.innerHTML = '';
       
       for (const [tramKey, tramData] of Object.entries(data)) {
-        const aiResult = runAIPrediction(
-          tramKey, 
-          tramData.NhietDo || 0, 
-          tramData.NongDoGas || 0, 
-          tramData.CoTiaLua || false
-        );
+        const isFire = tramData.CoTiaLua === true || tramData.CoTiaLua === "true";
+        const temp = parseFloat(tramData.NhietDo || 0);
+        const gas = parseFloat(tramData.NongDoGas || 0);
 
+        const aiResult = runAIPrediction(tramKey, temp, gas, isFire);
         const isAlert = aiResult.status !== "SAFE";
         const stationName = tramKey.replace('_', ' ');
 
-        // Tự động đẩy thông báo ra điện thoại khi AI phát hiện nguy hiểm hoặc có lửa
+        // Tự động đẩy thông báo báo động
         if (isAlert) {
           if (!alertStates[tramKey]) {
             sendPhoneNotification(`⚠️ CẢNH BÁO [${stationName}]`, aiResult.msg);
@@ -207,7 +187,7 @@
             <div class="flex justify-between items-center mb-4 pb-3 border-b border-slate-700">
               <h2 class="text-xl font-bold text-slate-200">📍 ${stationName}</h2>
               <span class="px-3 py-1 rounded-full text-xs font-bold ${isAlert ? 'bg-red-500/20 text-red-400 border border-red-500' : 'bg-green-500/20 text-green-400 border border-green-500'}">
-                ${tramData.TrangThai || 'An toan'}
+                ${tramData.TrangThai || (isAlert ? 'Co tia lua / Nguy hiem!' : 'An toan')}
               </span>
             </div>
 
@@ -219,7 +199,7 @@
             <div class="grid grid-cols-2 gap-4">
               <div class="bg-slate-900/60 p-3 rounded-xl">
                 <p class="text-xs text-slate-400">🌡️ Nhiệt Độ</p>
-                <p class="text-2xl font-bold ${tramData.NhietDo > 40 ? 'text-red-400' : 'text-slate-100'}">${tramData.NhietDo ?? '--'} °C</p>
+                <p class="text-2xl font-bold ${temp > 40 ? 'text-red-400' : 'text-slate-100'}">${tramData.NhietDo ?? '--'} °C</p>
               </div>
               <div class="bg-slate-900/60 p-3 rounded-xl">
                 <p class="text-xs text-slate-400">💧 Độ Ẩm</p>
@@ -227,7 +207,7 @@
               </div>
               <div class="bg-slate-900/60 p-3 rounded-xl">
                 <p class="text-xs text-slate-400">💨 Nồng Độ Gas</p>
-                <p class="text-2xl font-bold ${tramData.NongDoGas > 400 ? 'text-amber-400' : 'text-slate-100'}">${tramData.NongDoGas ?? '--'} <span class="text-xs font-normal">PPM</span></p>
+                <p class="text-2xl font-bold ${gas > 400 ? 'text-amber-400' : 'text-slate-100'}">${tramData.NongDoGas ?? '--'} <span class="text-xs font-normal">PPM</span></p>
               </div>
               <div class="bg-slate-900/60 p-3 rounded-xl">
                 <p class="text-xs text-slate-400">🌫️ Nồng Độ Bụi</p>
@@ -236,7 +216,7 @@
             </div>
 
             <div class="mt-4 pt-3 border-t border-slate-700/50 flex justify-between items-center text-xs text-slate-400">
-              <span>Cảm biến lửa: <strong class="${tramData.CoTiaLua ? 'text-red-400 font-bold' : 'text-green-400'}">${tramData.CoTiaLua ? 'Phát hiện tia lửa!' : 'Bình thường'}</strong></span>
+              <span>Cảm biến lửa: <strong class="${isFire ? 'text-red-400 font-bold' : 'text-green-400'}">${isFire ? 'Phát hiện tia lửa!' : 'Bình thường'}</strong></span>
             </div>
           </div>
         `;
