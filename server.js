@@ -25,7 +25,7 @@ setInterval(async () => {
       const gas = parseFloat(tramData.NongDoGas || 0);
 
       // Điều kiện báo động: Có lửa HOẶC Nhiệt độ > 50°C HOẶC Gas > 600 PPM
-      const isDangerous = isFire || temp > 50 || gas > 600;
+      const isDangerous = isFire || temp > 50 || gas > 1000;
 
       if (isDangerous) {
         // Giới hạn 20 giây gửi 1 tin nhắn/trạm để chống rác tin
@@ -36,7 +36,7 @@ setInterval(async () => {
           let reason = [];
           if (isFire) reason.push("🔥 TIA LỬA TRỰC TIẾP");
           if (temp > 50) reason.push(`🌡️ Nhiệt độ quá cao (${temp}°C)`);
-          if (gas > 600) reason.push(`💨 Nồng độ Gas nguy hiểm (${gas} PPM)`);
+          if (gas > 700) reason.push(`💨 Nồng độ Gas nguy hiểm (${gas} PPM)`);
 
           const msg = `🚨 *CẢNH BÁO PCCC KHẨN CẤP*\n\n📍 *Trạm:* ${stationName}\n⚠️ *Cảnh báo:* ${reason.join(" | ")}\n\n📊 *Thông số hiện tại:*\n• Nhiệt độ: \`${temp} °C\`\n• Nồng độ Gas: \`${gas} PPM\`\n• Độ ẩm: \`${tramData.DoAm || '--'} %\` \n\n👉 *Đề nghị kiểm tra khu vực ngay lập tức!*`;
 
