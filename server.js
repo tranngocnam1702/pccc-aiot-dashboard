@@ -25,7 +25,7 @@ setInterval(async () => {
       const gas = parseFloat(tramData.NongDoGas || 0);
 
       // Điều kiện báo động: Có lửa HOẶC Nhiệt độ > 50°C HOẶC Gas > 600 PPM
-      const isDangerous = isFire || temp > 50 || gas > 1000;
+      const isDangerous = isFire || temp > 50 || gas > 700;
 
       if (isDangerous) {
         // Giới hạn 20 giây gửi 1 tin nhắn/trạm để chống rác tin
