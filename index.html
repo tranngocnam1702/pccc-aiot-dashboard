@@ -97,18 +97,44 @@
 
     // Hàm thực thi đẩy thông báo ra màn hình điện thoại
     function sendPhoneNotification(title, body) {
-      if (isNotificationEnabled && Notification.permission === 'granted') {
-        if (swRegistration && swRegistration.active) {
-          swRegistration.active.postMessage({
-            type: 'SHOW_NOTIFICATION',
-            title: title,
-            body: body
-          });
-        } else if ('Notification' in window) {
-          new Notification(title, { body: body, icon: 'https://cdn-icons-png.flaticon.com/512/785/785116.png' });
-        }
-      }
-    }
+  if (!isNotificationEnabled || Notification.permission !== 'granted') return;
+
+  // Gửi lệnh đẩy thông báo cho Service Worker xử lý luồng rung báo động
+  if (navigator.serviceWorker && navigator.serviceWorker.controller) {
+    navigator.serviceWorker.controller.postMessage({
+      type: 'SHOW_NOTIFICATION',
+      title: title,
+      body: body
+    });
+  } else if (swRegistration && swRegistration.active) {
+    swRegistration.active.postMessage({
+      type: 'SHOW_NOTIFICATION',
+      title: title,
+      body: body
+    });
+  } else if ('Notification' in window) {
+    new Notification(title, {
+      body: body,
+      icon: 'https://cdn-icons-png.flaticon.com/512/785/785116.png',
+      vibrate: [1000, 200, 1000, 200, 1000]
+    });
+  }
+}
+  // 2. Dự phòng: Gửi thẳng qua Notification API (Đảm bảo nổ 100% khi màn hình đang bật)
+  else if (swRegistration && swRegistration.active) {
+    swRegistration.active.postMessage({
+      type: 'SHOW_NOTIFICATION',
+      title: title,
+      body: body
+    });
+  } else {
+    new Notification(title, {
+      body: body,
+      icon: 'https://cdn-icons-png.flaticon.com/512/785/785116.png',
+      vibrate: [500, 200, 500]
+    });
+  }
+}
 
     // 3. MÔ HÌNH AI DỰ BÁO NGUY CƠ CHÁY (GIỮ NGUYÊN BẢN CỦA BẠN)
     const historyData = {}; 
