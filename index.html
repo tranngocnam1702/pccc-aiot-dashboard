@@ -136,12 +136,12 @@
 
         historyData[stationId] = { temp: currentTemp, gas: currentGas, time: Date.now() };
 
-        if (tempRate > 0.5 || gasRate > 15 || (currentTemp > 40 && currentGas > 400)) {
+        if (tempRate > 0.5 || gasRate > 15 || (currentTemp > 40 && currentGas > 700)) {
           return { status: "WARNING", msg: "⚡ AI CẢNH BÁO SỚM: Nhiệt độ/Gas tăng vọt bất thường!" };
         }
       }
 
-      if (currentGas > 500) {
+      if (currentGas > 700) {
         return { status: "WARNING", msg: "⚠️ CẢNH BÁO: Nồng độ Gas cao vượt ngưỡng!" };
       }
 
