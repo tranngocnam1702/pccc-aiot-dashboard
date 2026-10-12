@@ -18,7 +18,7 @@
         <h1 class="text-2xl md:text-3xl font-bold text-red-500 flex items-center gap-2">
           🔥 HỆ THỐNG GIÁM SÁT & BÁO CHÁY AIoT
         </h1>
-        <p class="text-slate-400 text-sm mt-1">Tích hợp AI Dự Báo Sớm Nguy Cơ Cháy (Time-Series Analysis)</p>
+        <p class="text-slate-400 text-sm mt-1">Tích hợp AI Dự Báo Sớm Nguy Cơ Cháy (TinyML & Time-Series Analysis)</p>
       </div>
       <!-- Nút Bật/Tắt Thông Báo Đổi Màu Động -->
       <button id="btnPush" onclick="toggleNotification()" class="bg-red-600 hover:bg-red-700 text-white text-sm font-semibold px-4 py-2 rounded-lg shadow transition flex items-center gap-2">
@@ -115,40 +115,10 @@
       }
     }
 
-    // 3. MÔ HÌNH AI DỰ BÁO CỦA BẠN
-    const historyData = {}; 
+    // 3. THEO DÕI TRẠNG THÁI BÁO ĐỘNG ĐỂ GỬI PUSH NOTIFICATION
     const alertStates = {};
 
-    function runAIPrediction(stationId, currentTemp, currentGas, isFire) {
-      if (isFire) return { status: "DANGER", msg: "🚨 CẢNH BÁO: PHÁT HIỆN LỬA TRỰC TIẾP!" };
-
-      if (!historyData[stationId]) {
-        historyData[stationId] = { temp: currentTemp, gas: currentGas, time: Date.now() };
-        return { status: "SAFE", msg: "🟢 Trạng thái: An toàn (AI đang giám sát)" };
-      }
-
-      const prev = historyData[stationId];
-      const timeDiff = (Date.now() - prev.time) / 1000;
-
-      if (timeDiff >= 3) {
-        const tempRate = (currentTemp - prev.temp) / timeDiff;
-        const gasRate = (currentGas - prev.gas) / timeDiff;
-
-        historyData[stationId] = { temp: currentTemp, gas: currentGas, time: Date.now() };
-
-        if (tempRate > 0.5 || gasRate > 15 || (currentTemp > 40 && currentGas > 700)) {
-          return { status: "WARNING", msg: "⚡ AI CẢNH BÁO SỚM: Nhiệt độ/Gas tăng vọt bất thường!" };
-        }
-      }
-
-      if (currentGas > 700) {
-        return { status: "WARNING", msg: "⚠️ CẢNH BÁO: Nồng độ Gas cao vượt ngưỡng!" };
-      }
-
-      return { status: "SAFE", msg: "🟢 Trạng thái: An toàn" };
-    }
-
-    // 4. LẤY DỮ LIỆU TỪ FIREBASE REALTIME (DATABASE KHỦNG)
+    // 4. LẤY DỮ LIỆU TỪ FIREBASE REALTIME
     const stationsRef = db.ref('/DanhSachTram');
 
     stationsRef.on('value', (snapshot) => {
@@ -167,19 +137,33 @@
         const isFire = tramData.CoTiaLua === true || tramData.CoTiaLua === "true";
         const temp = parseFloat(tramData.NhietDo || 0);
         const gas = parseFloat(tramData.NongDoGas || 0);
-
-        const aiResult = runAIPrediction(tramKey, temp, gas, isFire);
-        const isAlert = aiResult.status !== "SAFE";
+        
+        // Lấy xác suất AI từ ESP32 gửi lên (mặc định 0 nếu chưa có)
+        const aiRisk = tramData.XacSuatChayAI !== undefined ? parseFloat(tramData.XacSuatChayAI) : 0;
+        
+        // Xác định trạng thái cảnh báo dựa trên AI hoặc tia lửa
+        const isAlert = aiRisk >= 50.0 || isFire || tramData.MucDoNguyCoAI?.includes("BÁO ĐỘNG") || tramData.MucDoNguyCoAI?.includes("Cảnh báo");
         const stationName = tramKey.replace('_', ' ');
 
-        // Tự động đẩy thông báo báo động
+        // Nội dung hiển thị AI
+        const aiMsg = tramData.MucDoNguyCoAI || (isAlert ? "⚠️ AI CẢNH BÁO NGUY CƠ CAO!" : "🟢 Trạng thái: An toàn (AI giám sát)");
+
+        // Tự động đẩy thông báo báo động qua Service Worker
         if (isAlert) {
           if (!alertStates[tramKey]) {
-            sendPhoneNotification(`⚠️ CẢNH BÁO [${stationName}]`, aiResult.msg);
+            sendPhoneNotification(`⚠️ CẢNH BÁO [${stationName}]`, `Xác suất cháy AI: ${aiRisk.toFixed(1)}% - ${aiMsg}`);
             alertStates[tramKey] = true;
           }
         } else {
           alertStates[tramKey] = false;
+        }
+
+        // Màu sắc thanh tiến trình AI theo mức độ rủi ro
+        let progressBarColor = "bg-emerald-500";
+        if (aiRisk >= 75 || isFire) {
+          progressBarColor = "bg-red-500 animate-pulse";
+        } else if (aiRisk >= 40) {
+          progressBarColor = "bg-amber-500";
         }
 
         const cardHtml = `
@@ -187,13 +171,19 @@
             <div class="flex justify-between items-center mb-4 pb-3 border-b border-slate-700">
               <h2 class="text-xl font-bold text-slate-200">📍 ${stationName}</h2>
               <span class="px-3 py-1 rounded-full text-xs font-bold ${isAlert ? 'bg-red-500/20 text-red-400 border border-red-500' : 'bg-green-500/20 text-green-400 border border-green-500'}">
-                ${tramData.TrangThai || (isAlert ? 'Co tia lua / Nguy hiem!' : 'An toan')}
+                ${tramData.TrangThai || (isAlert ? 'Nguy hiểm!' : 'An toàn')}
               </span>
             </div>
 
-            <!-- Khung dự báo AI -->
-            <div class="mb-4 p-3 rounded-xl text-xs font-semibold ${isAlert ? 'bg-red-950/80 text-red-300 border border-red-800' : 'bg-slate-900 text-emerald-400'}">
-              🤖 ${aiResult.msg}
+            <!-- Khung dự báo AI & Thanh Progress Bar -->
+            <div class="mb-4 p-3 rounded-xl ${isAlert ? 'bg-red-950/80 border border-red-800 text-red-300' : 'bg-slate-900 border border-slate-700 text-emerald-400'}">
+              <div class="flex justify-between items-center mb-2 text-xs font-semibold">
+                <span>🤖 Dự báo AI: ${aiMsg}</span>
+                <span class="font-bold text-sm">${aiRisk.toFixed(1)}%</span>
+              </div>
+              <div class="w-full bg-slate-700 rounded-full h-2.5">
+                <div class="${progressBarColor} h-2.5 rounded-full transition-all duration-500" style="width: ${Math.min(aiRisk, 100)}%"></div>
+              </div>
             </div>
 
             <div class="grid grid-cols-2 gap-4">
