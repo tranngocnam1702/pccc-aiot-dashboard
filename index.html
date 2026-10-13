@@ -30,6 +30,39 @@
     <div id="stationsContainer" class="grid grid-cols-1 md:grid-cols-2 gap-6 mt-8">
       <div class="text-center text-slate-400 col-span-2 py-10">Đang kết nối dữ liệu cảm biến...</div>
     </div>
+
+    <!-- KHUNG LỊCH SỬ CẢNH BÁO KHẨN CẤP & XUẤT CSV -->
+    <div class="mt-10 bg-slate-800 rounded-2xl p-6 border border-slate-700 shadow-xl">
+      <div class="flex flex-col md:flex-row justify-between items-center mb-4 gap-4">
+        <h2 class="text-xl font-bold text-slate-200 flex items-center gap-2">
+          📜 Lịch Sử Cảnh Báo Khẩn Cấp (Event Log)
+        </h2>
+        <!-- Nút Xuất File CSV -->
+        <button onclick="exportAlarmHistoryToCSV()" class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold px-4 py-2 rounded-lg shadow transition flex items-center gap-2">
+          📥 Xuất File CSV
+        </button>
+      </div>
+      
+      <div class="overflow-x-auto">
+        <table class="w-full text-left border-collapse">
+          <thead>
+            <tr class="bg-slate-900 text-slate-400 text-xs uppercase tracking-wider border-b border-slate-700">
+              <th class="p-3">Trạm</th>
+              <th class="p-3">Nhiệt Độ</th>
+              <th class="p-3">Độ Ẩm</th>
+              <th class="p-3">Gas (PPM)</th>
+              <th class="p-3">Xác Suất AI</th>
+              <th class="p-3">Mức Độ Nguy Cơ</th>
+            </tr>
+          </thead>
+          <tbody id="historyTableBody" class="divide-y divide-slate-700/50 text-sm text-slate-300">
+            <tr>
+              <td colspan="6" class="p-4 text-center text-slate-500">Chưa có lịch sử cảnh báo nào ghi nhận.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
   </div>
 
   <script>
@@ -46,6 +79,7 @@
 
     document.addEventListener("DOMContentLoaded", () => {
       updateNotificationButton();
+      loadAlarmHistory(); // Gọi hàm tải và lắng nghe lịch sử cảnh báo
     });
 
     if ('serviceWorker' in navigator) {
@@ -117,7 +151,7 @@
 
     const alertStates = {};
 
-    // 3. LẤY DỮ LIỆU TỪ FIREBASE REALTIME (ĐỌC TRỰC TIẾP KẾT QUẢ AI TỪ ESP32)
+    // 3. LẤY DỮ LIỆU TỪ TRẠM (REALTIME)
     const stationsRef = db.ref('/DanhSachTram');
 
     stationsRef.on('value', (snapshot) => {
@@ -137,14 +171,12 @@
         const temp = parseFloat(tramData.NhietDo || 0);
         const gas = parseFloat(tramData.NongDoGas || 0);
         
-        // Lấy chính xác xác suất phần trăm AI từ ESP32 Master đẩy lên Firebase
         const aiRisk = tramData.XacSuatChayAI !== undefined ? parseFloat(tramData.XacSuatChayAI) : 0;
         const aiMsg = tramData.MucDoNguyCoAI || "An toàn";
         
         const isAlert = aiRisk >= 50.0 || isFire || aiMsg.includes("BÁO ĐỘNG") || aiMsg.includes("Cảnh báo");
         const stationName = tramKey.replace('_', ' ');
 
-        // Tự động đẩy thông báo
         if (isAlert) {
           if (!alertStates[tramKey]) {
             sendPhoneNotification(`⚠️ CẢNH BÁO [${stationName}]`, `Xác suất cháy AI: ${aiRisk.toFixed(1)}% - ${aiMsg}`);
@@ -154,7 +186,6 @@
           alertStates[tramKey] = false;
         }
 
-        // Màu sắc thanh tiến trình (%) AI
         let progressBarColor = "bg-emerald-500";
         if (aiRisk >= 75 || isFire) {
           progressBarColor = "bg-red-500 animate-pulse";
@@ -171,7 +202,6 @@
               </span>
             </div>
 
-            <!-- Khung hiển thị Xác suất AI (%) từ ESP32 -->
             <div class="mb-4 p-3 rounded-xl ${isAlert ? 'bg-red-950/80 border border-red-800 text-red-300' : 'bg-slate-900 border border-slate-700 text-emerald-400'}">
               <div class="flex justify-between items-center mb-2 text-xs font-semibold">
                 <span>🤖 AI Dự báo: ${aiMsg}</span>
@@ -182,7 +212,6 @@
               </div>
             </div>
 
-            <!-- Các thông số cảm biến -->
             <div class="grid grid-cols-2 gap-4">
               <div class="bg-slate-900/60 p-3 rounded-xl">
                 <p class="text-xs text-slate-400">🌡️ Nhiệt Độ</p>
@@ -210,6 +239,72 @@
         container.innerHTML += cardHtml;
       }
     });
+
+    // 4. LẮNG NGHE LỊCH SỬ CẢNH BÁO & XUẤT CSV
+    let globalHistoryData = [];
+
+    function loadAlarmHistory() {
+      const historyRef = db.ref('/LichSuCanhBao').limitToLast(100);
+      const tableBody = document.getElementById('historyTableBody');
+
+      historyRef.on('value', (snapshot) => {
+        const historyData = snapshot.val();
+        if (!historyData) return;
+
+        globalHistoryData = historyData; // Lưu lại dữ liệu để xuất CSV
+        tableBody.innerHTML = ''; 
+        
+        const entries = Object.entries(historyData).reverse();
+
+        entries.forEach(([key, log]) => {
+          const row = document.createElement('tr');
+          row.className = "hover:bg-slate-700/30 transition";
+          row.innerHTML = `
+            <td class="p-3 font-semibold text-slate-200">📍 Trạm ${log.NodeID ?? '--'}</td>
+            <td class="p-3">${log.NhietDo ?? '--'} °C</td>
+            <td class="p-3">${log.DoAm ?? '--'} %</td>
+            <td class="p-3">${log.NongDoGas ?? '--'} PPM</td>
+            <td class="p-3 font-bold text-red-400">${(log.XacSuatChayAI || 0).toFixed(1)}%</td>
+            <td class="p-3 font-semibold text-amber-400">${log.MucDoNguyCoAI ?? 'Cảnh báo'}</td>
+          `;
+          tableBody.appendChild(row);
+        });
+      });
+    }
+
+    function exportAlarmHistoryToCSV() {
+      if (!globalHistoryData || Object.keys(globalHistoryData).length === 0) {
+        alert("Không có dữ liệu lịch sử để xuất file!");
+        return;
+      }
+
+      let csvContent = "\uFEFFNodeID,NhietDo(C),DoAm(%),NongDoGas(PPM),NongDoBui(ug/m3),XacSuatChayAI(%),MucDoNguyCoAI\n";
+
+      Object.values(globalHistoryData).forEach(log => {
+        const row = [
+          `Tram ${log.NodeID ?? 0}`,
+          log.NhietDo ?? 0,
+          log.DoAm ?? 0,
+          log.NongDoGas ?? 0,
+          log.NongDoBui ?? 0,
+          (log.XacSuatChayAI ?? 0).toFixed(1),
+          `"${log.MucDoNguyCoAI ?? ''}"`
+        ];
+        csvContent += row.join(",") + "\n";
+      });
+
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      
+      const dateStr = new Date().toISOString().slice(0, 10);
+      link.setAttribute("href", url);
+      link.setAttribute("download", `LichSuCanhBao_AIoT_${dateStr}.csv`);
+      document.body.appendChild(link);
+      
+      link.click();
+      document.body.removeChild(link);
+    }
   </script>
 </body>
 </html>
