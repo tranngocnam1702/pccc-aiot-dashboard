@@ -11,7 +11,7 @@
   <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
 </head>
 <body class="bg-slate-900 text-white min-h-screen p-4 md:p-8">
-  <div class="max-w-5xl mx-auto">
+  <div class="max-w-6xl mx-auto">
     <!-- Header -->
     <header class="flex flex-col md:flex-row justify-between items-center pb-6 border-b border-slate-700 gap-4">
       <div>
@@ -31,33 +31,42 @@
       <div class="text-center text-slate-400 col-span-2 py-10">Đang kết nối dữ liệu cảm biến...</div>
     </div>
 
-    <!-- KHUNG LỊCH SỬ CẢNH BÁO KHẨN CẤP & XUẤT CSV -->
+    <!-- KHUNG LỊCH SỬ CẢNH BÁO KÈM BỘ LỌC NGÀY & XUẤT CSV -->
     <div class="mt-10 bg-slate-800 rounded-2xl p-6 border border-slate-700 shadow-xl">
-      <div class="flex flex-col md:flex-row justify-between items-center mb-4 gap-4">
+      <div class="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
         <h2 class="text-xl font-bold text-slate-200 flex items-center gap-2">
-          📜 Lịch Sử Cảnh Báo Khẩn Cấp (Event Log)
+          📊 Dữ Liệu Cảm Biến & Lịch Sử Theo Thời Gian
         </h2>
-        <!-- Nút Xuất File CSV -->
-        <button onclick="exportAlarmHistoryToCSV()" class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold px-4 py-2 rounded-lg shadow transition flex items-center gap-2">
-          📥 Xuất File CSV
-        </button>
+        
+        <!-- Bộ chọn ngày (Date Picker) & Nút Xuất CSV -->
+        <div class="flex items-center gap-3">
+          <div class="flex items-center bg-slate-900 border border-slate-700 rounded-lg px-3 py-2">
+            <span class="mr-2 text-slate-400">📅</span>
+            <input type="date" id="filterDate" onchange="filterHistoryByDate()" class="bg-transparent text-white text-sm focus:outline-none cursor-pointer">
+          </div>
+          <button onclick="exportAlarmHistoryToCSV()" class="bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold px-4 py-2.5 rounded-lg shadow transition flex items-center gap-2">
+            📥 Xuất file CSV
+          </button>
+        </div>
       </div>
-      
+
       <div class="overflow-x-auto">
         <table class="w-full text-left border-collapse">
           <thead>
             <tr class="bg-slate-900 text-slate-400 text-xs uppercase tracking-wider border-b border-slate-700">
+              <th class="p-3">#</th>
+              <th class="p-3">Thời gian</th>
               <th class="p-3">Trạm</th>
-              <th class="p-3">Nhiệt Độ</th>
-              <th class="p-3">Độ Ẩm</th>
+              <th class="p-3">Nhiệt độ (°C)</th>
+              <th class="p-3">Độ ẩm (%)</th>
               <th class="p-3">Gas (PPM)</th>
-              <th class="p-3">Xác Suất AI</th>
-              <th class="p-3">Mức Độ Nguy Cơ</th>
+              <th class="p-3">Bụi (µg/m³)</th>
+              <th class="p-3">Mức độ rủi ro</th>
             </tr>
           </thead>
           <tbody id="historyTableBody" class="divide-y divide-slate-700/50 text-sm text-slate-300">
             <tr>
-              <td colspan="6" class="p-4 text-center text-slate-500">Chưa có lịch sử cảnh báo nào ghi nhận.</td>
+              <td colspan="8" class="p-4 text-center text-slate-500">Đang tải dữ liệu lịch sử...</td>
             </tr>
           </tbody>
         </table>
@@ -79,7 +88,7 @@
 
     document.addEventListener("DOMContentLoaded", () => {
       updateNotificationButton();
-      loadAlarmHistory(); // Gọi hàm tải và lắng nghe lịch sử cảnh báo
+      loadAlarmHistory(); // Gọi hàm tải dữ liệu lịch sử
     });
 
     if ('serviceWorker' in navigator) {
@@ -240,48 +249,89 @@
       }
     });
 
-    // 4. LẮNG NGHE LỊCH SỬ CẢNH BÁO & XUẤT CSV
-    let globalHistoryData = [];
+    // 4. QUẢN LÝ LỊCH SỬ CẢNH BÁO, LỌC THEO NGÀY & XUẤT CSV
+    let allHistoryRecords = [];
 
     function loadAlarmHistory() {
-      const historyRef = db.ref('/LichSuCanhBao').limitToLast(100);
-      const tableBody = document.getElementById('historyTableBody');
+      const historyRef = db.ref('/LichSuCanhBao');
 
       historyRef.on('value', (snapshot) => {
         const historyData = snapshot.val();
         if (!historyData) return;
 
-        globalHistoryData = historyData; // Lưu lại dữ liệu để xuất CSV
-        tableBody.innerHTML = ''; 
-        
-        const entries = Object.entries(historyData).reverse();
-
-        entries.forEach(([key, log]) => {
-          const row = document.createElement('tr');
-          row.className = "hover:bg-slate-700/30 transition";
-          row.innerHTML = `
-            <td class="p-3 font-semibold text-slate-200">📍 Trạm ${log.NodeID ?? '--'}</td>
-            <td class="p-3">${log.NhietDo ?? '--'} °C</td>
-            <td class="p-3">${log.DoAm ?? '--'} %</td>
-            <td class="p-3">${log.NongDoGas ?? '--'} PPM</td>
-            <td class="p-3 font-bold text-red-400">${(log.XacSuatChayAI || 0).toFixed(1)}%</td>
-            <td class="p-3 font-semibold text-amber-400">${log.MucDoNguyCoAI ?? 'Cảnh báo'}</td>
-          `;
-          tableBody.appendChild(row);
-        });
+        // Chuyển đổi object từ Firebase thành mảng dữ liệu
+        allHistoryRecords = Object.values(historyData);
+        renderTable(allHistoryRecords); // Hiển thị toàn bộ ban đầu
       });
     }
 
+    // Hàm vẽ bảng dữ liệu lên giao diện
+    function renderTable(records) {
+      const tableBody = document.getElementById('historyTableBody');
+      tableBody.innerHTML = '';
+
+      if (records.length === 0) {
+        tableBody.innerHTML = `<tr><td colspan="8" class="p-4 text-center text-slate-500">Không tìm thấy dữ liệu phù hợp.</td></tr>`;
+        return;
+      }
+
+      // Đảo ngược để bản ghi mới nhất hiển thị lên đầu
+      const sortedRecords = [...records].reverse();
+
+      sortedRecords.forEach((log, index) => {
+        let badgeColor = "bg-emerald-500/20 text-emerald-400 border border-emerald-500";
+        if (log.MucDoNguyCoAI?.includes("BÁO ĐỘNG") || log.MucDoNguyCoAI?.includes("Nguy hiểm")) {
+          badgeColor = "bg-red-500/20 text-red-400 border border-red-500 animate-pulse";
+        } else if (log.MucDoNguyCoAI?.includes("Cảnh báo")) {
+          badgeColor = "bg-amber-500/20 text-amber-400 border border-amber-500";
+        }
+
+        const row = document.createElement('tr');
+        row.className = "hover:bg-slate-700/30 transition";
+        row.innerHTML = `
+          <td class="p-3 text-slate-400">${index + 1}</td>
+          <td class="p-3 font-mono text-xs text-slate-300">${log.ThoiGian ?? 'Đang cập nhật'}</td>
+          <td class="p-3 font-semibold text-slate-200">Trạm ${log.NodeID ?? '--'}</td>
+          <td class="p-3">${log.NhietDo ?? '--'} °C</td>
+          <td class="p-3">${log.DoAm ?? '--'} %</td>
+          <td class="p-3">${log.NongDoGas ?? '--'} PPM</td>
+          <td class="p-3">${log.NongDoBui ?? '--'} µg/m³</td>
+          <td class="p-3">
+            <span class="px-2.5 py-1 rounded-full text-xs font-bold ${badgeColor}">
+              ${log.MucDoNguyCoAI ?? 'An toàn'}
+            </span>
+          </td>
+        `;
+        tableBody.appendChild(row);
+      });
+    }
+
+    // Hàm lọc dữ liệu theo ngày khi chọn trên lịch (Date Picker)
+    function filterHistoryByDate() {
+      const selectedDate = document.getElementById('filterDate').value; // Định dạng "YYYY-MM-DD"
+      if (!selectedDate) {
+        renderTable(allHistoryRecords); // Nếu chưa chọn ngày thì hiển thị tất cả
+        return;
+      }
+
+      // Lọc các bản ghi có chuỗi ThoiGian bắt đầu bằng ngày được chọn
+      const filtered = allHistoryRecords.filter(log => log.ThoiGian && log.ThoiGian.startsWith(selectedDate));
+      renderTable(filtered);
+    }
+
+    // Hàm xuất dữ liệu ra file CSV
     function exportAlarmHistoryToCSV() {
-      if (!globalHistoryData || Object.keys(globalHistoryData).length === 0) {
+      if (!allHistoryRecords || allHistoryRecords.length === 0) {
         alert("Không có dữ liệu lịch sử để xuất file!");
         return;
       }
 
-      let csvContent = "\uFEFFNodeID,NhietDo(C),DoAm(%),NongDoGas(PPM),NongDoBui(ug/m3),XacSuatChayAI(%),MucDoNguyCoAI\n";
+      let csvContent = "\uFEFFSTT,ThoiGian,NodeID,NhietDo(C),DoAm(%),NongDoGas(PPM),NongDoBui(ug/m3),XacSuatChayAI(%),MucDoNguyCoAI\n";
 
-      Object.values(globalHistoryData).forEach(log => {
+      allHistoryRecords.forEach((log, index) => {
         const row = [
+          index + 1,
+          `"${log.ThoiGian ?? ''}"`,
           `Tram ${log.NodeID ?? 0}`,
           log.NhietDo ?? 0,
           log.DoAm ?? 0,
