@@ -39,11 +39,10 @@
         </h2>
         
         <!-- Bộ chọn ngày (Date Picker) tối ưu vùng click -->
+        <!-- Bộ chọn ngày tối ưu, bấm vào là hiện lịch chọn -->
         <div class="flex items-center gap-3">
-          <div class="bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 flex items-center">
-            <span class="mr-2 text-slate-400">📅</span>
-            <input type="date" id="filterDate" onchange="filterHistoryByDate()" class="bg-transparent text-white text-sm focus:outline-none cursor-pointer">
-          </div>
+          <input type="date" id="filterDate" onchange="filterHistoryByDate()" class="bg-slate-900 border border-slate-700 text-white text-sm rounded-lg px-4 py-2.5 focus:outline-none focus:border-blue-500 cursor-pointer">
+          
           <button onclick="exportAlarmHistoryToCSV()" class="bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold px-4 py-2.5 rounded-lg shadow transition flex items-center gap-2">
             📥 Xuất file CSV
           </button>
