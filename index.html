@@ -158,22 +158,40 @@
 
     const alertStates = {};
 
-    // 3. LẤY DỮ LIỆU TỪ TRẠM (REALTIME & ĐỌC DỮ LIỆU HIỆN CÓ)
-    const stationsRef = db.ref('/DanhSachTram');
+    // 3. LẤY DỮ LIỆU TỪ TRẠM (QUÉT TỪ GỐC ĐỂ NHẬN TRỰC TIẾP TRAM_1, TRAM_2)
+    const dbRootRef = db.ref('/');
 
-    stationsRef.on('value', (snapshot) => {
-      const data = snapshot.val();
+    dbRootRef.on('value', (snapshot) => {
+      const rootData = snapshot.val();
       const container = document.getElementById('stationsContainer');
       if (!container) return;
 
-      if (!data) {
-        container.innerHTML = '<div class="text-center text-slate-400 col-span-2 py-10">Không tìm thấy dữ liệu trạm trên Firebase!</div>';
+      if (!rootData) {
+        container.innerHTML = '<div class="text-center text-slate-400 col-span-2 py-10">Không tìm thấy dữ liệu trên Firebase!</div>';
+        return;
+      }
+
+      // Tự động quét ra các trạm bắt đầu bằng Tram_
+      const stations = {};
+      for (const [key, val] of Object.entries(rootData)) {
+        if (key.startsWith('Tram_')) {
+          stations[key] = val;
+        }
+        if (key === 'DanhSachTram' && val && typeof val === 'object') {
+          for (const [subKey, subVal] of Object.entries(val)) {
+            stations[subKey] = subVal;
+          }
+        }
+      }
+
+      if (Object.keys(stations).length === 0) {
+        container.innerHTML = '<div class="text-center text-slate-400 col-span-2 py-10">Chưa có dữ liệu trạm nào trên Firebase!</div>';
         return;
       }
 
       container.innerHTML = '';
       
-      for (const [tramKey, tramData] of Object.entries(data)) {
+      for (const [tramKey, tramData] of Object.entries(stations)) {
         if (!tramData || typeof tramData !== 'object') continue;
 
         const isFire = tramData.CoTiaLua === true || tramData.CoTiaLua === "true";
@@ -318,10 +336,8 @@
         return;
       }
 
-      // Tách chuỗi năm, tháng, ngày từ giá trị chọn trên lịch (VD: "2026-10-13")
       const filtered = allHistoryRecords.filter(log => {
         if (!log.ThoiGian) return false;
-        // Lấy phần ngày tháng năm ở đầu chuỗi ThoiGian trên Firebase (so sánh 10 ký tự đầu tiên: "YYYY-MM-DD")
         const logDateStr = log.ThoiGian.substring(0, 10); 
         return logDateStr === selectedDate;
       });
