@@ -1,3 +1,4 @@
+HTML
 <!DOCTYPE html>
 <html lang="vi">
 <head>
@@ -11,348 +12,139 @@
   <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
 </head>
 <body class="bg-slate-900 text-white min-h-screen p-4 md:p-8">
-  <div class="max-w-6xl mx-auto">
+  <div class="max-w-5xl mx-auto">
     <!-- Header -->
     <header class="flex flex-col md:flex-row justify-between items-center pb-6 border-b border-slate-700 gap-4">
       <div>
         <h1 class="text-2xl md:text-3xl font-bold text-red-500 flex items-center gap-2">
           🔥 HỆ THỐNG GIÁM SÁT & BÁO CHÁY AIoT
         </h1>
-        <p class="text-slate-400 text-sm mt-1">Tích hợp AI Dự Báo Sớm Nguy Cơ Cháy (ESP32 TinyML & Cloud 24/7)</p>
+        <p class="text-slate-400 text-sm mt-1">Tích hợp AI Dự Báo Sớm Nguy Cơ Cháy (Time-Series Analysis)</p>
       </div>
-      <!-- Nút Bật/Tắt Thông Báo Đổi Màu Động -->
-      <button id="btnPush" onclick="toggleNotification()" class="bg-red-600 hover:bg-red-700 text-white text-sm font-semibold px-4 py-2 rounded-lg shadow transition flex items-center gap-2">
+      <button id="btnPush" onclick="requestNotification()" class="bg-red-600 hover:bg-red-700 text-white text-sm font-semibold px-4 py-2 rounded-lg shadow transition">
         🔔 Bật Thông Báo Push
       </button>
     </header>
 
     <!-- Danh sách các Trạm -->
     <div id="stationsContainer" class="grid grid-cols-1 md:grid-cols-2 gap-6 mt-8">
-      <div class="text-center text-slate-400 col-span-2 py-10">Đang tải dữ liệu cảm biến từ Firebase...</div>
-    </div>
-
-    <!-- KHUNG LỊCH SỬ CẢNH BÁO KÈM BỘ LỌC NGÀY & XUẤT CSV -->
-    <div class="mt-10 bg-slate-800 rounded-2xl p-6 border border-slate-700 shadow-xl">
-      <div class="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
-        <h2 class="text-xl font-bold text-slate-200 flex items-center gap-2">
-          📊 Dữ Liệu Cảm Biến & Lịch Sử Theo Thời Gian
-        </h2>
-        
-        <!-- Bộ chọn ngày (Date Picker) tối ưu vùng click -->
-        <div class="flex items-center gap-3">
-          <input type="date" id="filterDate" onchange="filterHistoryByDate()" class="bg-slate-900 border border-slate-700 text-white text-sm rounded-lg px-4 py-2.5 focus:outline-none focus:border-blue-500 cursor-pointer">
-          
-          <button onclick="exportAlarmHistoryToCSV()" class="bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold px-4 py-2.5 rounded-lg shadow transition flex items-center gap-2">
-            📥 Xuất file CSV
-          </button>
-        </div>
-      </div>
-
-      <div class="overflow-x-auto">
-        <table class="w-full text-left border-collapse">
-          <thead>
-            <tr class="bg-slate-900 text-slate-400 text-xs uppercase tracking-wider border-b border-slate-700">
-              <th class="p-3">#</th>
-              <th class="p-3">Thời gian</th>
-              <th class="p-3">Trạm</th>
-              <th class="p-3">Nhiệt độ (°C)</th>
-              <th class="p-3">Độ ẩm (%)</th>
-              <th class="p-3">Gas (PPM)</th>
-              <th class="p-3">Bụi (µg/m³)</th>
-              <th class="p-3">Mức độ rủi ro</th>
-            </tr>
-          </thead>
-          <tbody id="historyTableBody" class="divide-y divide-slate-700/50 text-sm text-slate-300">
-            <tr>
-              <td colspan="8" class="p-4 text-center text-slate-500">Đang tải lịch sử từ Firebase...</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
+      <div class="text-center text-slate-400 col-span-2 py-10">Đang khởi tạo thuật toán AI & kết nối Firebase...</div>
     </div>
   </div>
 
   <script>
-    // 1. Cấu hình Firebase
     const firebaseConfig = {
       databaseURL: "https://duanpccc-7ca9b-default-rtdb.asia-southeast1.firebasedatabase.app/"
     };
     firebase.initializeApp(firebaseConfig);
     const db = firebase.database();
 
-    // 2. Cấu hình Push Notification & Lưu trạng thái
-    let isNotificationEnabled = localStorage.getItem('pccc_push_enabled') === 'true';
-    let swRegistration = null;
-
-    document.addEventListener("DOMContentLoaded", () => {
-      updateNotificationButton();
-      loadAlarmHistory(); // Gọi hàm lấy dữ liệu lịch sử từ Firebase
-    });
-
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('sw.js').then((reg) => {
-        swRegistration = reg;
-        console.log('Service Worker đã sẵn sàng!');
-        updateNotificationButton();
-      }).catch((err) => {
-        console.error('Lỗi đăng ký Service Worker:', err);
+      navigator.serviceWorker.register('sw.js');
+    }
+
+    function requestNotification() {
+      Notification.requestPermission().then(permission => {
+        if (permission === 'granted') alert('Đã bật thành công Push Notification!');
       });
     }
 
-    function updateNotificationButton() {
-      const btn = document.getElementById('btnPush');
-      if (!btn) return;
+    // Bộ nhớ lưu lịch sử dữ liệu để AI tính tốc độ tăng trưởng (Gradient)
+    const historyData = {}; 
 
-      if (isNotificationEnabled && Notification.permission === 'granted') {
-        btn.className = "bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold px-4 py-2 rounded-lg shadow transition flex items-center gap-2";
-        btn.innerHTML = "🔕 Tắt Thông Báo Push";
-      } else {
-        isNotificationEnabled = false;
-        localStorage.setItem('pccc_push_enabled', 'false');
-        btn.className = "bg-red-600 hover:bg-red-700 text-white text-sm font-semibold px-4 py-2 rounded-lg shadow transition flex items-center gap-2";
-        btn.innerHTML = "🔔 Bật Thông Báo Push";
+    // MÔ HÌNH AI DỰ BÁO NGUY CƠ CHÁY
+    function runAIPrediction(stationId, currentTemp, currentGas, isFire) {
+      if (isFire) return { status: "DANGER", msg: "🚨 CẢNH BÁO: PHÁT HIỆN LỬA TRỰC TIẾP!" };
+
+      if (!historyData[stationId]) {
+        historyData[stationId] = { temp: currentTemp, gas: currentGas, time: Date.now() };
+        return { status: "SAFE", msg: "🟢 Trạng thái: An toàn (AI đang giám sát)" };
       }
+
+      const prev = historyData[stationId];
+      const timeDiff = (Date.now() - prev.time) / 1000; // tính bằng giây
+
+      if (timeDiff >= 3) { // Cập nhật tính toán mỗi 3 giây
+        const tempRate = (currentTemp - prev.temp) / timeDiff; // Độ C / giây
+        const gasRate = (currentGas - prev.gas) / timeDiff;   // PPM / giây
+
+        // Cập nhật lại điểm lịch sử
+        historyData[stationId] = { temp: currentTemp, gas: currentGas, time: Date.now() };
+
+        // Đánh giá thuật toán AI
+        if (tempRate > 0.5 || gasRate > 15 || (currentTemp > 40 && currentGas > 400)) {
+          return { status: "WARNING", msg: "⚡ AI CẢNH BÁO SỚM: Nhiệt độ/Gas tăng vọt bất thường!" };
+        }
+      }
+
+      if (currentGas > 500) {
+        return { status: "WARNING", msg: "⚠️ CẢNH BÁO: Nồng độ Gas cao vượt ngưỡng!" };
+      }
+
+      return { status: "SAFE", msg: "🟢 Trạng thái: An toàn" };
     }
 
-    function toggleNotification() {
-      if (!isNotificationEnabled) {
-        Notification.requestPermission().then(permission => {
-          if (permission === 'granted') {
-            isNotificationEnabled = true;
-            localStorage.setItem('pccc_push_enabled', 'true');
-            updateNotificationButton();
-            sendPhoneNotification("🔥 HỆ THỐNG PCCC AIoT", "Đã bật thông báo đẩy thành công!");
-          } else {
-            alert('Bạn cần cấp quyền thông báo trên trình duyệt/điện thoại!');
-          }
-        });
-      } else {
-        isNotificationEnabled = false;
-        localStorage.setItem('pccc_push_enabled', 'false');
-        updateNotificationButton();
-      }
-    }
-
-    function sendPhoneNotification(title, body) {
-      if (!isNotificationEnabled || Notification.permission !== 'granted') return;
-
-      if (navigator.serviceWorker && navigator.serviceWorker.controller) {
-        navigator.serviceWorker.controller.postMessage({
-          type: 'SHOW_NOTIFICATION',
-          title: title,
-          body: body
-        });
-      } else if (swRegistration && swRegistration.active) {
-        swRegistration.active.postMessage({
-          type: 'SHOW_NOTIFICATION',
-          title: title,
-          body: body
-        });
-      } else if ('Notification' in window) {
-        new Notification(title, {
-          body: body,
-          icon: 'https://cdn-icons-png.flaticon.com/512/785/785116.png'
-        });
-      }
-    }
-
-    const alertStates = {};
-
-    // 3. LẤY DỮ LIỆU TỪ TRẠM (HIỂN THỊ DỮ LIỆU GẦN NHẤT KỂ CẢ KHI TẮT MẠCH)
+    // ĐỌC VÀ HIỂN THỊ DỮ LIỆU
     const stationsRef = db.ref('/DanhSachTram');
 
     stationsRef.on('value', (snapshot) => {
       const data = snapshot.val();
       const container = document.getElementById('stationsContainer');
-      if (!container) return;
-
-      if (!data) {
-        container.innerHTML = '<div class="text-center text-slate-400 col-span-2 py-10">Chưa có dữ liệu trạm trên Firebase!</div>';
-        return;
-      }
+      if (!data) return;
 
       container.innerHTML = '';
       
       for (const [tramKey, tramData] of Object.entries(data)) {
-        if (!tramData || typeof tramData !== 'object') continue;
+        const aiResult = runAIPrediction(
+          tramKey, 
+          tramData.NhietDo || 0, 
+          tramData.NongDoGas || 0, 
+          tramData.CoTiaLua || false
+        );
 
-        const isFire = tramData.CoTiaLua === true || tramData.CoTiaLua === "true";
-        const temp = parseFloat(tramData.NhietDo || 0);
-        const humid = parseFloat(tramData.DoAm || 0);
-        const gas = parseFloat(tramData.NongDoGas || 0);
-        const dust = parseFloat(tramData.NongDoBui || 0);
-        
-        const aiRisk = tramData.XacSuatChayAI !== undefined ? parseFloat(tramData.XacSuatChayAI) : 0;
-        const aiMsg = tramData.MucDoNguyCoAI || "An toàn";
-        
-        const isAlert = aiRisk >= 50.0 || isFire || aiMsg.includes("BÁO ĐỘNG") || aiMsg.includes("Cảnh báo");
-        const stationName = tramKey.replace('_', ' ');
-
-        let progressBarColor = "bg-emerald-500";
-        if (aiRisk >= 75 || isFire) {
-          progressBarColor = "bg-red-500 animate-pulse";
-        } else if (aiRisk >= 40) {
-          progressBarColor = "bg-amber-500";
-        }
+        const isAlert = aiResult.status !== "SAFE";
 
         const cardHtml = `
           <div class="bg-slate-800 rounded-2xl p-6 border ${isAlert ? 'border-red-500 animate-pulse' : 'border-slate-700'} shadow-xl">
             <div class="flex justify-between items-center mb-4 pb-3 border-b border-slate-700">
-              <h2 class="text-xl font-bold text-slate-200">📍 ${stationName}</h2>
+              <h2 class="text-xl font-bold text-slate-200">📍 ${tramKey.replace('_', ' ')}</h2>
               <span class="px-3 py-1 rounded-full text-xs font-bold ${isAlert ? 'bg-red-500/20 text-red-400 border border-red-500' : 'bg-green-500/20 text-green-400 border border-green-500'}">
-                ${tramData.TrangThai || (isAlert ? 'Nguy hiểm!' : 'Hoạt động')}
+                ${tramData.TrangThai || 'An toan'}
               </span>
             </div>
 
-            <div class="mb-4 p-3 rounded-xl ${isAlert ? 'bg-red-950/80 border border-red-800 text-red-300' : 'bg-slate-900 border border-slate-700 text-emerald-400'}">
-              <div class="flex justify-between items-center mb-2 text-xs font-semibold">
-                <span>🤖 AI Dự báo: ${aiMsg}</span>
-                <span class="font-bold text-sm">${aiRisk.toFixed(1)}%</span>
-              </div>
-              <div class="w-full bg-slate-700 rounded-full h-3">
-                <div class="${progressBarColor} h-3 rounded-full transition-all duration-500" style="width: ${Math.min(aiRisk, 100)}%"></div>
-              </div>
+            <!-- Khung dự báo AI -->
+            <div class="mb-4 p-3 rounded-xl text-xs font-semibold ${isAlert ? 'bg-red-950/80 text-red-300 border border-red-800' : 'bg-slate-900 text-emerald-400'}">
+              🤖 ${aiResult.msg}
             </div>
 
             <div class="grid grid-cols-2 gap-4">
               <div class="bg-slate-900/60 p-3 rounded-xl">
                 <p class="text-xs text-slate-400">🌡️ Nhiệt Độ</p>
-                <p class="text-2xl font-bold ${temp > 40 ? 'text-red-400' : 'text-slate-100'}">${temp} °C</p>
+                <p class="text-2xl font-bold ${tramData.NhietDo > 40 ? 'text-red-400' : 'text-slate-100'}">${tramData.NhietDo ?? '--'} °C</p>
               </div>
               <div class="bg-slate-900/60 p-3 rounded-xl">
                 <p class="text-xs text-slate-400">💧 Độ Ẩm</p>
-                <p class="text-2xl font-bold text-slate-100">${humid} %</p>
+                <p class="text-2xl font-bold text-slate-100">${tramData.DoAm ?? '--'} %</p>
               </div>
               <div class="bg-slate-900/60 p-3 rounded-xl">
                 <p class="text-xs text-slate-400">💨 Nồng Độ Gas</p>
-                <p class="text-2xl font-bold ${gas > 400 ? 'text-amber-400' : 'text-slate-100'}">${gas} <span class="text-xs font-normal">PPM</span></p>
+                <p class="text-2xl font-bold ${tramData.NongDoGas > 400 ? 'text-amber-400' : 'text-slate-100'}">${tramData.NongDoGas ?? '--'} <span class="text-xs font-normal">PPM</span></p>
               </div>
               <div class="bg-slate-900/60 p-3 rounded-xl">
                 <p class="text-xs text-slate-400">🌫️ Nồng Độ Bụi</p>
-                <p class="text-2xl font-bold text-slate-100">${dust} <span class="text-xs font-normal">µg/m³</span></p>
+                <p class="text-2xl font-bold text-slate-100">${tramData.NongDoBui ?? '--'} <span class="text-xs font-normal">µg/m³</span></p>
               </div>
             </div>
 
             <div class="mt-4 pt-3 border-t border-slate-700/50 flex justify-between items-center text-xs text-slate-400">
-              <span>Cảm biến lửa: <strong class="${isFire ? 'text-red-400 font-bold' : 'text-green-400'}">${isFire ? 'Phát hiện tia lửa!' : 'Bình thường'}</strong></span>
+              <span>Cảm biến lửa: <strong class="${tramData.CoTiaLua ? 'text-red-400 font-bold' : 'text-green-400'}">${tramData.CoTiaLua ? 'Phát hiện tia lửa!' : 'Bình thường'}</strong></span>
             </div>
           </div>
         `;
         container.innerHTML += cardHtml;
       }
     });
-
-    // 4. LẮNG NGHE LỊCH SỬ THẬT TỪ FIREBASE, LỌC NGÀY & XUẤT CSV
-    let allHistoryRecords = [];
-
-    function loadAlarmHistory() {
-      const historyRef = db.ref('/LichSuCanhBao');
-
-      historyRef.on('value', (snapshot) => {
-        const historyData = snapshot.val();
-        const tableBody = document.getElementById('historyTableBody');
-
-        if (!historyData) {
-          allHistoryRecords = [];
-          tableBody.innerHTML = `<tr><td colspan="8" class="p-4 text-center text-slate-500">Chưa có bản ghi lịch sử nào trên Firebase.</td></tr>`;
-          return;
-        }
-
-        allHistoryRecords = Object.values(historyData);
-        renderTable(allHistoryRecords);
-      });
-    }
-
-    function renderTable(records) {
-      const tableBody = document.getElementById('historyTableBody');
-      tableBody.innerHTML = '';
-
-      if (records.length === 0) {
-        tableBody.innerHTML = `<tr><td colspan="8" class="p-4 text-center text-slate-500">Không tìm thấy dữ liệu phù hợp trong khoảng thời gian này.</td></tr>`;
-        return;
-      }
-
-      const sortedRecords = [...records].reverse();
-
-      sortedRecords.forEach((log, index) => {
-        let badgeColor = "bg-emerald-500/20 text-emerald-400 border border-emerald-500";
-        if (log.MucDoNguyCoAI?.includes("BÁO ĐỘNG") || log.MucDoNguyCoAI?.includes("Nguy hiểm")) {
-          badgeColor = "bg-red-500/20 text-red-400 border border-red-500 animate-pulse";
-        } else if (log.MucDoNguyCoAI?.includes("Cảnh báo")) {
-          badgeColor = "bg-amber-500/20 text-amber-400 border border-amber-500";
-        }
-
-        const row = document.createElement('tr');
-        row.className = "hover:bg-slate-700/30 transition";
-        row.innerHTML = `
-          <td class="p-3 text-slate-400">${index + 1}</td>
-          <td class="p-3 font-mono text-xs text-slate-300">${log.ThoiGian ?? 'Đang cập nhật'}</td>
-          <td class="p-3 font-semibold text-slate-200">Trạm ${log.NodeID ?? '--'}</td>
-          <td class="p-3">${log.NhietDo ?? '--'} °C</td>
-          <td class="p-3">${log.DoAm ?? '--'} %</td>
-          <td class="p-3">${log.NongDoGas ?? '--'} PPM</td>
-          <td class="p-3">${log.NongDoBui ?? '--'} µg/m³</td>
-          <td class="p-3">
-            <span class="px-2.5 py-1 rounded-full text-xs font-bold ${badgeColor}">
-              ${log.MucDoNguyCoAI ?? 'An toàn'}
-            </span>
-          </td>
-        `;
-        tableBody.appendChild(row);
-      });
-    }
-
-    function filterHistoryByDate() {
-      const selectedDate = document.getElementById('filterDate').value; // Trả về chuẩn "YYYY-MM-DD" từ input type="date"
-      if (!selectedDate) {
-        renderTable(allHistoryRecords);
-        return;
-      }
-
-      const filtered = allHistoryRecords.filter(log => {
-        if (!log.ThoiGian) return false;
-        const logDateStr = log.ThoiGian.substring(0, 10); 
-        return logDateStr === selectedDate;
-      });
-
-      renderTable(filtered);
-    }
-
-    function exportAlarmHistoryToCSV() {
-      if (!allHistoryRecords || allHistoryRecords.length === 0) {
-        alert("Không có dữ liệu lịch sử để xuất file!");
-        return;
-      }
-
-      let csvContent = "\uFEFFSTT,ThoiGian,NodeID,NhietDo(C),DoAm(%),NongDoGas(PPM),NongDoBui(ug/m3),XacSuatChayAI(%),MucDoNguyCoAI\n";
-
-      allHistoryRecords.forEach((log, index) => {
-        const row = [
-          index + 1,
-          `"${log.ThoiGian ?? ''}"`,
-          `Tram ${log.NodeID ?? 0}`,
-          log.NhietDo ?? 0,
-          log.DoAm ?? 0,
-          log.NongDoGas ?? 0,
-          log.NongDoBui ?? 0,
-          (log.XacSuatChayAI ?? 0).toFixed(1),
-          `"${log.MucDoNguyCoAI ?? ''}"`
-        ];
-        csvContent += row.join(",") + "\n";
-      });
-
-      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      
-      const dateStr = new Date().toISOString().slice(0, 10);
-      link.setAttribute("href", url);
-      link.setAttribute("download", `LichSuCanhBao_AIoT_${dateStr}.csv`);
-      document.body.appendChild(link);
-      
-      link.click();
-      document.body.removeChild(link);
-    }
   </script>
 </body>
 </html>
