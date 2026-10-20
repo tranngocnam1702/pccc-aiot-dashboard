@@ -309,21 +309,22 @@
     }
 
     function filterHistoryByDate() {
-      const selectedDate = document.getElementById('filterDate').value; // Định dạng "YYYY-MM-DD"
+      const selectedDate = document.getElementById('filterDate').value; // Trả về chuẩn "YYYY-MM-DD" từ input type="date"
       if (!selectedDate) {
         renderTable(allHistoryRecords);
         return;
       }
 
-      const filtered = allHistoryRecords.filter(log => log.ThoiGian && log.ThoiGian.startsWith(selectedDate));
+      // Tách chuỗi năm, tháng, ngày từ giá trị chọn trên lịch (VD: "2026-10-13")
+      const filtered = allHistoryRecords.filter(log => {
+        if (!log.ThoiGian) return false;
+        // Lấy phần ngày tháng năm ở đầu chuỗi ThoiGian trên Firebase (so sánh 10 ký tự đầu tiên: "YYYY-MM-DD")
+        const logDateStr = log.ThoiGian.substring(0, 10); 
+        return logDateStr === selectedDate;
+      });
+
       renderTable(filtered);
     }
-
-    function exportAlarmHistoryToCSV() {
-      if (!allHistoryRecords || allHistoryRecords.length === 0) {
-        alert("Không có dữ liệu lịch sử để xuất file!");
-        return;
-      }
 
       let csvContent = "\uFEFFSTT,ThoiGian,NodeID,NhietDo(C),DoAm(%),NongDoGas(PPM),NongDoBui(ug/m3),XacSuatChayAI(%),MucDoNguyCoAI\n";
 
