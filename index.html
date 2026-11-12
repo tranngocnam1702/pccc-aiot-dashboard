@@ -31,14 +31,14 @@
       <div class="text-center text-slate-400 col-span-2 py-10">Đang tải dữ liệu cảm biến từ Firebase...</div>
     </div>
 
-    <!-- KHUNG LỊCH SỬ CẢNH BÁO KÈM BỘ LỌC NGÀY & XUẤT CSV -->
+    <!-- KHUNG LỊCH SỬ CẢNH BÁO KÈM BỘ LỌC NGÀY, PHÂN TRANG & XUẤT CSV -->
     <div class="mt-10 bg-slate-800 rounded-2xl p-6 border border-slate-700 shadow-xl">
       <div class="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
         <h2 class="text-xl font-bold text-slate-200 flex items-center gap-2">
           📊 Dữ Liệu Cảm Biến & Lịch Sử Theo Thời Gian
         </h2>
         
-        <!-- Bộ chọn ngày (Date Picker) tối ưu vùng click -->
+        <!-- Bộ chọn ngày (Date Picker) & Xuất CSV -->
         <div class="flex items-center gap-3">
           <input type="date" id="filterDate" onchange="filterHistoryByDate()" class="bg-slate-900 border border-slate-700 text-white text-sm rounded-lg px-4 py-2.5 focus:outline-none focus:border-blue-500 cursor-pointer">
           
@@ -48,6 +48,7 @@
         </div>
       </div>
 
+      <!-- Bảng dữ liệu -->
       <div class="overflow-x-auto">
         <table class="w-full text-left border-collapse">
           <thead>
@@ -68,6 +69,24 @@
             </tr>
           </tbody>
         </table>
+      </div>
+
+      <!-- THANH PHÂN TRANG (PAGINATION CONTROLS) -->
+      <div class="flex flex-col sm:flex-row justify-between items-center mt-6 pt-4 border-t border-slate-700/60 gap-4">
+        <div id="pageInfo" class="text-xs text-slate-400">
+          Hiển thị 0 - 0 trong tổng số 0 bản ghi
+        </div>
+        <div class="flex items-center gap-2">
+          <button id="btnPrev" onclick="changePage(-1)" class="bg-slate-700 hover:bg-slate-600 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-semibold px-3 py-2 rounded-lg transition">
+            ◀ Trang trước
+          </button>
+          <span id="currentPageDisplay" class="text-xs font-bold text-slate-200 px-3 py-1 bg-slate-900 border border-slate-700 rounded-md">
+            Trang 1 / 1
+          </span>
+          <button id="btnNext" onclick="changePage(1)" class="bg-slate-700 hover:bg-slate-600 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-semibold px-3 py-2 rounded-lg transition">
+            Trang sau ▶
+          </button>
+        </div>
       </div>
     </div>
   </div>
@@ -156,9 +175,7 @@
       }
     }
 
-    const alertStates = {};
-
-    // 3. LẤY DỮ LIỆU TỪ TRẠM (HIỂN THỊ DỮ LIỆU GẦN NHẤT KỂ CẢ KHI TẮT MẠCH)
+    // 3. LẮNG NGHE DỮ LIỆU CÁC TRẠM
     const stationsRef = db.ref('/DanhSachTram');
 
     stationsRef.on('value', (snapshot) => {
@@ -242,39 +259,75 @@
       }
     });
 
-    // 4. LẮNG NGHE LỊCH SỬ THẬT TỪ FIREBASE, LỌC NGÀY & XUẤT CSV
-    let allHistoryRecords = [];
+    // 4. LOGIC PHÂN TRANG & LỊCH SỬ THỜI GIAN THỰC
+    let allHistoryRecords = []; // Lưu danh sách đầy đủ từ Firebase
+    let filteredRecords = [];   // Lưu danh sách sau khi đã lọc ngày
+    let currentPage = 1;
+    const recordsPerPage = 20;  // Giới hạn 20 cảnh báo / trang
 
     function loadAlarmHistory() {
       const historyRef = db.ref('/LichSuCanhBao');
 
       historyRef.on('value', (snapshot) => {
         const historyData = snapshot.val();
-        const tableBody = document.getElementById('historyTableBody');
 
         if (!historyData) {
           allHistoryRecords = [];
-          tableBody.innerHTML = `<tr><td colspan="8" class="p-4 text-center text-slate-500">Chưa có bản ghi lịch sử nào trên Firebase.</td></tr>`;
+          filteredRecords = [];
+          renderPaginatedTable();
           return;
         }
 
-        allHistoryRecords = Object.values(historyData);
-        renderTable(allHistoryRecords);
+        // Lấy danh sách bản ghi và đảo ngược thời gian (mới nhất lên đầu)
+        allHistoryRecords = Object.values(historyData).reverse();
+        
+        // Cập nhật lại danh sách đang hiển thị theo bộ lọc ngày hiện tại
+        applyDateFilter();
       });
     }
 
-    function renderTable(records) {
+    function applyDateFilter() {
+      const selectedDate = document.getElementById('filterDate').value;
+      if (!selectedDate) {
+        filteredRecords = [...allHistoryRecords];
+      } else {
+        filteredRecords = allHistoryRecords.filter(log => {
+          if (!log.ThoiGian) return false;
+          return log.ThoiGian.substring(0, 10) === selectedDate;
+        });
+      }
+
+      currentPage = 1; // Reset về trang 1 khi lọc mới
+      renderPaginatedTable();
+    }
+
+    function filterHistoryByDate() {
+      applyDateFilter();
+    }
+
+    function renderPaginatedTable() {
       const tableBody = document.getElementById('historyTableBody');
       tableBody.innerHTML = '';
 
-      if (records.length === 0) {
-        tableBody.innerHTML = `<tr><td colspan="8" class="p-4 text-center text-slate-500">Không tìm thấy dữ liệu phù hợp trong khoảng thời gian này.</td></tr>`;
+      const totalRecords = filteredRecords.length;
+
+      if (totalRecords === 0) {
+        tableBody.innerHTML = `<tr><td colspan="8" class="p-4 text-center text-slate-500">Không tìm thấy dữ liệu cảnh báo phù hợp.</td></tr>`;
+        updatePaginationUI(0, 0, 0);
         return;
       }
 
-      const sortedRecords = [...records].reverse();
+      // Tính toán chỉ số cắt mảng theo trang
+      const totalPages = Math.ceil(totalRecords / recordsPerPage);
+      if (currentPage > totalPages) currentPage = totalPages;
+      if (currentPage < 1) currentPage = 1;
 
-      sortedRecords.forEach((log, index) => {
+      const startIndex = (currentPage - 1) * recordsPerPage;
+      const endIndex = Math.min(startIndex + recordsPerPage, totalRecords);
+      const pageRecords = filteredRecords.slice(startIndex, endIndex);
+
+      // Hiển thị các hàng dữ liệu của trang hiện tại
+      pageRecords.forEach((log, index) => {
         let badgeColor = "bg-emerald-500/20 text-emerald-400 border border-emerald-500";
         if (log.MucDoNguyCoAI?.includes("BÁO ĐỘNG") || log.MucDoNguyCoAI?.includes("Nguy hiểm")) {
           badgeColor = "bg-red-500/20 text-red-400 border border-red-500 animate-pulse";
@@ -282,10 +335,12 @@
           badgeColor = "bg-amber-500/20 text-amber-400 border border-amber-500";
         }
 
+        const rowNumber = startIndex + index + 1; // Số thứ tự liên tục theo toàn danh sách
+
         const row = document.createElement('tr');
         row.className = "hover:bg-slate-700/30 transition";
         row.innerHTML = `
-          <td class="p-3 text-slate-400">${index + 1}</td>
+          <td class="p-3 text-slate-400">${rowNumber}</td>
           <td class="p-3 font-mono text-xs text-slate-300">${log.ThoiGian ?? 'Đang cập nhật'}</td>
           <td class="p-3 font-semibold text-slate-200">Trạm ${log.NodeID ?? '--'}</td>
           <td class="p-3">${log.NhietDo ?? '--'} °C</td>
@@ -300,33 +355,53 @@
         `;
         tableBody.appendChild(row);
       });
+
+      updatePaginationUI(startIndex + 1, endIndex, totalRecords, totalPages);
     }
 
-    function filterHistoryByDate() {
-      const selectedDate = document.getElementById('filterDate').value; // Trả về chuẩn "YYYY-MM-DD" từ input type="date"
-      if (!selectedDate) {
-        renderTable(allHistoryRecords);
+    function changePage(direction) {
+      const totalPages = Math.ceil(filteredRecords.length / recordsPerPage);
+      const newPage = currentPage + direction;
+
+      if (newPage >= 1 && newPage <= totalPages) {
+        currentPage = newPage;
+        renderPaginatedTable();
+      }
+    }
+
+    function updatePaginationUI(from, to, total, totalPages) {
+      const pageInfo = document.getElementById('pageInfo');
+      const currentPageDisplay = document.getElementById('currentPageDisplay');
+      const btnPrev = document.getElementById('btnPrev');
+      const btnNext = document.getElementById('btnNext');
+
+      if (total === 0) {
+        pageInfo.innerText = "Hiển thị 0 - 0 trong tổng số 0 bản ghi";
+        currentPageDisplay.innerText = "Trang 0 / 0";
+        btnPrev.disabled = true;
+        btnNext.disabled = true;
         return;
       }
 
-      const filtered = allHistoryRecords.filter(log => {
-        if (!log.ThoiGian) return false;
-        const logDateStr = log.ThoiGian.substring(0, 10); 
-        return logDateStr === selectedDate;
-      });
+      pageInfo.innerText = `Hiển thị ${from} - ${to} trong tổng số ${total} bản ghi`;
+      currentPageDisplay.innerText = `Trang ${currentPage} / ${totalPages}`;
 
-      renderTable(filtered);
+      btnPrev.disabled = (currentPage <= 1);
+      btnNext.disabled = (currentPage >= totalPages);
     }
 
+    // 5. XUẤT CSV (Xuất toàn bộ danh sách đang lọc)
     function exportAlarmHistoryToCSV() {
-      if (!allHistoryRecords || allHistoryRecords.length === 0) {
+      const recordsToExport = filteredRecords.length > 0 ? filteredRecords : allHistoryRecords;
+
+      if (!recordsToExport || recordsToExport.length === 0) {
         alert("Không có dữ liệu lịch sử để xuất file!");
         return;
       }
 
       let csvContent = "\uFEFFSTT,ThoiGian,NodeID,NhietDo(C),DoAm(%),NongDoGas(PPM),NongDoBui(ug/m3),XacSuatChayAI(%),MucDoNguyCoAI\n";
 
-      allHistoryRecords.forEach((log, index) => {
+      recordsToExport.forEach((log, index) => {
         const row = [
           index + 1,
           `"${log.ThoiGian ?? ''}"`,
